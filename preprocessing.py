@@ -64,35 +64,42 @@ def process_image(path):
     return hog_results
 
 def main():
-    df = spark.read.table(SOURCE_TABLE)
+    count = MAX_DF_SIZE
+    while count >= MAX_DF_SIZE:
+        df = spark.read.table(SOURCE_TABLE)
 
-    target_table_exists = spark.catalog.tableExists(TARGET_TABLE)
+        target_table_exists = spark.catalog.tableExists(TARGET_TABLE)
 
-    if target_table_exists:
-        target = spark.read.table(TARGET_TABLE).select("path")
-        df = df.join(target, df.ImagePath == target.path,"anti").limit(MAX_DF_SIZE)
-    else:
-        df.limit(MAX_DF_SIZE)
-    
-    df = df.repartition(df.count())
+        if target_table_exists:
+            target = spark.read.table(TARGET_TABLE).select("path")
+            df = df.join(target, df.ImagePath == target.path,"anti").limit(MAX_DF_SIZE)
+        else:
+            df.limit(MAX_DF_SIZE)
+        
+        count = df.count()
+        if count == 0:
+            break
+        print(count)
 
-    df = df.rdd.flatMap(process_image)
+        df = df.repartition(df.count())
 
-    schema = StructType([
-                    StructField("path",StringType(), False),
-                    StructField("feature_descriptors", ArrayType(FloatType(), False), False),
-                    StructField("x", IntegerType(), False),
-                    StructField("y", IntegerType(), False),
-                    StructField("slice_x", IntegerType(), False),
-                    StructField("slice_y", IntegerType(), False)
-                ])
+        df = df.rdd.flatMap(process_image)
 
-    df = spark.createDataFrame(df, schema)
+        schema = StructType([
+                        StructField("path",StringType(), False),
+                        StructField("feature_descriptors", ArrayType(FloatType(), False), False),
+                        StructField("x", IntegerType(), False),
+                        StructField("y", IntegerType(), False),
+                        StructField("slice_x", IntegerType(), False),
+                        StructField("slice_y", IntegerType(), False)
+                    ])
 
-    if target_table_exists:
-        df.writeTo(TARGET_TABLE).using("iceberg").append()
-    else:
-        df.writeTo(TARGET_TABLE).using("iceberg").getOrCreate()
+        df = spark.createDataFrame(df, schema)
+
+        if target_table_exists:
+            df.writeTo(TARGET_TABLE).using("iceberg").append()
+        else:
+            df.writeTo(TARGET_TABLE).using("iceberg").getOrCreate()
 
 
 if __name__ == "__main__":
