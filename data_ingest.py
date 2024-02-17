@@ -26,7 +26,7 @@ def file_filter(path):
 
 def file_type_filter(file):
     file = file.upper()
-    file_types = ['.JPG','.PNG','.GIF','.JPEG']
+    file_types = ['.JPG','.PNG','.JPEG']
     return any(ext in file for ext in file_types)
 
 def find_images(path):
@@ -38,6 +38,8 @@ def find_images(path):
     files = list(filter(file_filter, paths))
     image_paths = list(filter(file_type_filter, files))
 
+    image_paths = [{"ImagePath":str(image)} for image in image_paths]
+
     return image_paths
 
 def main():
@@ -45,15 +47,10 @@ def main():
 
     print(len(paths))
 
-    start = time.time()
-    output = spark.sparkContext.parallelize(paths, len(paths)).map(find_images).collect()
-    end = time.time()
-
-    print(end-start)
-
-    output = [{"ImagePath":str(x)} for xs in output for x in xs]
+    output = spark.sparkContext.parallelize(paths, len(paths)).flatMap(find_images).collect()
 
     create_table(output)
+    read_table()
 
 def create_table(data):
     schema = StructType([
@@ -65,9 +62,11 @@ def create_table(data):
     df.writeTo("facial_recognition.image_path").using("iceberg").replace()
 
 def read_table():
-    df = spark.read.table("facial_recognition.image_path").collect()
+    df = spark.read.table("facial_recognition.image_path")
 
-    print(df)
+    print(df.collect())
+    print(df.count())
+
 
 if __name__ == "__main__":
     main()
